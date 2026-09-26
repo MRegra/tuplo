@@ -1,0 +1,12 @@
+# build output
+target/
+*.class
+# local reference material (NOT published: third-party C# original + IST course PDF)
+reference/
+# IDEs / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+# logs
+*.log

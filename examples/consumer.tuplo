@@ -1,0 +1,3 @@
+# A consumer: take work out. take blocks until a match exists.
+take <"task", "*", null>
+take <"tick", "*">

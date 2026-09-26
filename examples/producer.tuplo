@@ -1,0 +1,7 @@
+# A producer: drop some work into the space.
+add <"task", "build", 1>
+add <"task", "test", 2>
+begin-repeat 3
+  add <"tick", "x">
+end-repeat
+read <"task", "*", null>

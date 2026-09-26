@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>dev.sobatista.tuplo</groupId>
+  <artifactId>tuplo-parent</artifactId>
+  <version>0.1.0</version>
+  <packaging>pom</packaging>
+
+  <name>Tuplo</name>
+  <description>A distributed, fault-tolerant tuple space in Java — add/read/take with wildcards, blocking reads, and pluggable replication (SMR total-order, XL).</description>
+  <url>https://github.com/MRegra/tuplo</url>
+  <licenses>
+    <license><name>Apache License, Version 2.0</name><url>https://www.apache.org/licenses/LICENSE-2.0</url></license>
+  </licenses>
+
+  <modules>
+    <module>tuplo-core</module>
+    <module>tuplo-cluster</module>
+    <module>tuplo-node</module>
+  </modules>
+
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <junit.version>5.11.4</junit.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.junit</groupId><artifactId>junit-bom</artifactId>
+        <version>${junit.version}</version><type>pom</type><scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>dev.sobatista.tuplo</groupId><artifactId>tuplo-core</artifactId><version>0.1.0</version>
+      </dependency>
+      <dependency>
+        <groupId>dev.sobatista.tuplo</groupId><artifactId>tuplo-cluster</artifactId><version>0.1.0</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+  </dependencies>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.5.2</version></plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+</project>
