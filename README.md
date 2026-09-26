@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/MRegra/tuplo/actions/workflows/ci.yml/badge.svg)](https://github.com/MRegra/tuplo/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-![status](https://img.shields.io/badge/status-0.1.0%20(pre--1.0)-orange)
+![status](https://img.shields.io/badge/status-0.2.0%20(pre--1.0)-orange)
 
 A tuple space is a shared bag of tuples that any process can write to and read from. You `add` a tuple, and
 someone else `read`s or `take`s one that *matches a pattern* — like leaving a note on a shared board and letting
@@ -12,7 +12,7 @@ whoever needs it pick it up. [Linda](https://en.wikipedia.org/wiki/Linda_(coordi
 idea in the 80s; it's still one of the cleanest ways to coordinate processes that don't know about each other.
 
 Tuplo makes that bag **distributed and fault-tolerant**: the tuples live on several servers, so if one dies the
-data is still there. It's a teaching-first codebase — the goal is that you can read it and *learn how* replication
+data is still there. It ships **two replication variants** — state-machine replication and a Xu–Liskov-style design — so you can see the trade-off, not just read about it. It's a teaching-first codebase — the goal is that you can read it and *learn how* replication
 and coordination actually work, not just import a jar.
 
 ## 30-second demo
@@ -62,8 +62,8 @@ Fields are strings or small objects, and schemas add wildcards:
 | Module | What's inside |
 |---|---|
 | **tuplo-core** | The tuple space itself — `Tuple`, `Schema`, `Field`, wildcard matching, the blocking `LocalTupleSpace`. Start here. |
-| **tuplo-cluster** | The distributed part — total-order broadcast + `SmrReplica` (state-machine replication). N replicas, one agreed history. |
-| **tuplo-node** | The runnable part — an RMI server, a client library, and a script-client that runs `.tuplo` files. |
+| **tuplo-cluster** | The distributed part — **two** replication variants: **SMR** (total-order broadcast, one agreed history) and **XL** (Xu–Liskov spirit: full replication, parallel adds, per-tuple coordinated take). Plus crash / freeze / unfreeze and a shared view. |
+| **tuplo-node** | The runnable part — an RMI server, a client library, a script-client that runs `.tuplo` files, and a **PuppetMaster** that drives either variant and injects faults. |
 
 ## Run a server and a script
 

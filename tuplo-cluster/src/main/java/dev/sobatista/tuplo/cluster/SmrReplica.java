@@ -45,6 +45,11 @@ public final class SmrReplica implements TupleSpace, TotalOrder.Deliverer {
     private final ConcurrentHashMap<Long, CompletableFuture<Tuple>> awaitingResult = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, CompletableFuture<Void>> awaitingAdd = new ConcurrentHashMap<>();
 
+    // --- fault injection (crash / freeze), driven by Cluster / PuppetMaster ---
+    private volatile boolean crashed = false;
+    private boolean frozen = false;
+    private final List<Object[]> frozenBuffer = new ArrayList<>();   // {Long seq, Command cmd} received while frozen
+
     public SmrReplica(int id, TotalOrder order) {
         this.id = id;
         this.order = order;
@@ -55,8 +60,27 @@ public final class SmrReplica implements TupleSpace, TotalOrder.Deliverer {
 
     // ---- client-facing TupleSpace API -------------------------------------
 
+    /** Crash this replica permanently (a delivered command is dropped from now on). */
+    public synchronized void crash() { crashed = true; }
+
+    /** Freeze: keep receiving ordered commands but buffer them until {@link #unfreeze()}. */
+    public synchronized void freeze() { if (!crashed) frozen = true; }
+
+    /** Unfreeze: apply everything that arrived while frozen, in order. */
+    public synchronized void unfreeze() {
+        frozen = false;
+        var buffered = new ArrayList<>(frozenBuffer);
+        frozenBuffer.clear();
+        for (Object[] item : buffered) applyDelivered((Long) item[0], (Command) item[1]);
+    }
+
+    private void requireAlive() {
+        if (crashed) throw new IllegalStateException("replica " + id + " has crashed");
+    }
+
     @Override
     public void add(Tuple tuple) {
+        requireAlive();
         long req = reqCounter.incrementAndGet();
         var f = new CompletableFuture<Void>();
         awaitingAdd.put(req, f);
@@ -66,11 +90,13 @@ public final class SmrReplica implements TupleSpace, TotalOrder.Deliverer {
 
     @Override
     public Tuple take(Schema schema) throws InterruptedException {
+        requireAlive();
         return await(new Command.Take(id, reqCounter.incrementAndGet(), schema));
     }
 
     @Override
     public Tuple read(Schema schema) throws InterruptedException {
+        requireAlive();
         return await(new Command.Read(id, reqCounter.incrementAndGet(), schema));
     }
 
@@ -100,6 +126,12 @@ public final class SmrReplica implements TupleSpace, TotalOrder.Deliverer {
 
     @Override
     public synchronized void deliver(long seq, Command command) {
+        if (crashed) return;                        // a crashed replica processes nothing more
+        if (frozen) { frozenBuffer.add(new Object[]{seq, command}); return; }   // received, processed on unfreeze
+        applyDelivered(seq, command);
+    }
+
+    private void applyDelivered(long seq, Command command) {
         switch (command) {
             case Command.Add a -> {
                 tuples.add(a.tuple());
