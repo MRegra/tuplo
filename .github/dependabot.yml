@@ -1,0 +1,25 @@
+version: 2
+updates:
+  # Maven: the parent pom.xml at the root drives all modules (tuplo-core, tuplo-cluster, tuplo-node).
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build(deps)
+    groups:
+      maven-minor-and-patch:
+        update-types: [minor, patch]
+
+  # GitHub Actions: keeps the SHA-pinned `uses:` lines (and their # vX.Y comments) current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci(deps)
+    groups:
+      actions:
+        patterns: ['*']

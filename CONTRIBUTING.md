@@ -26,7 +26,7 @@ mvn -q -pl tuplo-node exec:java -Dexec.mainClass=dev.sobatista.tuplo.node.SmrDem
 1. Branch from `main`.
 2. Keep the change small and focused. Add a test — a bug fix gets a test that fails without it.
 3. Use [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`; `feat!:` or a `BREAKING CHANGE:` footer for anything that breaks the public API.
-4. `mvn test` is green.
+4. `mvn verify` is green — it runs the tests and the spotless style check (`mvn spotless:apply` fixes style).
 5. Open a PR describing what and why.
 
 By contributing you agree your work is licensed under the project's [Apache-2.0](LICENSE) license.
