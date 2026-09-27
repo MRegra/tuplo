@@ -52,7 +52,7 @@
   <build>
     <pluginManagement>
       <plugins>
-        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.5.2</version></plugin>
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.6.0</version></plugin>
       </plugins>
     </pluginManagement>
     <plugins>
@@ -75,6 +75,26 @@
                 </rule>
               </rules>
             </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- Style gate: `mvn verify` (and CI) fails on unused imports, trailing whitespace or a missing
+           final newline. Deliberately light — it enforces hygiene without reformatting the code.
+           Fix locally with `mvn spotless:apply`. -->
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <version>3.10.2</version>
+        <configuration>
+          <java>
+            <removeUnusedImports/>
+            <trimTrailingWhitespace/>
+            <endWithNewline/>
+          </java>
+        </configuration>
+        <executions>
+          <execution>
+            <goals><goal>check</goal></goals>
           </execution>
         </executions>
       </plugin>
