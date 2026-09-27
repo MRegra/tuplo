@@ -5,6 +5,10 @@ name: Security
 #   - gitleaks secret scan over the full git history
 #   - dependency review of every PR's dependency diff
 # Actions are pinned by commit SHA (Dependabot keeps them current, see .github/dependabot.yml).
+# Runs on the home self-hosted runners (server-dev1/server-dev2, labels: self-hosted, Linux, X64,
+# home). This repo is public: fork PRs require the owner's approval before any workflow run
+# (repo setting "Fork pull request workflows from outside collaborators" = all external
+# contributors) — keep that setting on, since jobs here execute on our own infrastructure.
 
 on:
   push:
@@ -22,7 +26,7 @@ concurrency:
 jobs:
   codeql:
     name: CodeQL (java)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, home]
     timeout-minutes: 30
     permissions:
       actions: read          # CodeQL reads this run's metadata
@@ -44,7 +48,7 @@ jobs:
 
   gitleaks:
     name: Secrets scan (gitleaks)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, home]
     timeout-minutes: 10
     permissions:
       contents: read
@@ -73,7 +77,7 @@ jobs:
   dependency-review:
     name: Dependency review
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, home]
     timeout-minutes: 10
     permissions:
       contents: read

@@ -7,7 +7,8 @@ permissions:
   contents: read
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Home self-hosted runners (server-dev1/server-dev2), labels: self-hosted, Linux, X64, home.
+    runs-on: [self-hosted, home]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
