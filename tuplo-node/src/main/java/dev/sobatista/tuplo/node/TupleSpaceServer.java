@@ -14,8 +14,8 @@ import java.rmi.server.UnicastRemoteObject;
  * A single tuple-space server exposed over RMI.
  *
  * <p>Run it, point clients at {@code rmi://host:port/name}, and you have a working (single-node) tuple
- * space. Replication across servers is layered on top via {@code tuplo-cluster}'s total-order broadcast;
- * see the ROADMAP for the networked SMR wiring. Message delays model a slow/lossy network for experiments.
+ * space. For a replicated cluster of processes (SMR or XL) run {@link ReplicaNode} instead. Message delays model a
+ * slow/lossy network for experiments.
  *
  * <pre>{@code
  *   mvn -q -pl tuplo-node exec:java -Dexec.mainClass=dev.sobatista.tuplo.node.TupleSpaceServer \

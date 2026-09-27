@@ -23,9 +23,16 @@ import java.util.List;
  *   wait &lt;ms&gt;                    # sleep before the next command
  * </pre>
  *
- * <p>The statement's networked form launches real processes through a per-machine PCS over RMI; here the "nodes" are the
- * replicas of an in-process cluster, addressed by index. The command semantics are identical — see the ROADMAP for the
- * networked PCS.
+ * <p>Two modes, same commands. In-process, the "nodes" are the replicas of a {@link dev.sobatista.tuplo.cluster.Cluster}
+ * or {@link dev.sobatista.tuplo.cluster.XlCluster}. Networked ({@link RemoteCluster}, or {@link #main}), they are
+ * {@link ReplicaNode} processes reached over RMI, addressed by their index in the {@code --nodes} list, and
+ * {@code crash} really kills the process. Launching processes remotely through a per-machine PCS is on the ROADMAP.
+ *
+ * <pre>{@code
+ *   java -cp ... dev.sobatista.tuplo.node.PuppetMaster \
+ *        --nodes localhost:11000/r0,localhost:11001/r1,localhost:11002/r2 [--script examples/experiment.pm]
+ * }</pre>
+ * Without {@code --script} it reads commands from the console, one per line.
  */
 public final class PuppetMaster {
 
@@ -43,6 +50,27 @@ public final class PuppetMaster {
     }
 
     public void runFile(Path file) throws Exception { run(Files.readAllLines(file)); }
+
+    /** Networked mode: drive running {@link ReplicaNode} processes from a script file or the console. */
+    public static void main(String[] argv) throws Exception {
+        var a = Args.parse(argv);
+        var cluster = new RemoteCluster(a.require("nodes"));
+        var pm = new PuppetMaster(cluster);
+        String script = a.get("script", null);
+        if (script != null) {
+            pm.runFile(resolveScript(script));
+            return;
+        }
+        var in = new java.io.BufferedReader(new java.io.InputStreamReader(System.in, java.nio.charset.StandardCharsets.UTF_8));
+        System.out.println("puppetmaster> commands: status | crash i | freeze i | unfreeze i | client i file | wait ms");
+        for (String line; (line = in.readLine()) != null; ) {
+            try {
+                pm.run(List.of(line));
+            } catch (Exception e) {
+                System.out.println("error: " + e.getMessage());
+            }
+        }
+    }
 
     private void exec(String line) throws Exception {
         String[] p = line.split("\\s+", 3);

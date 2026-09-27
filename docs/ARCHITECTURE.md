@@ -53,11 +53,41 @@ implements the same `TupleSpace` API so app code doesn't care whether the space 
 `ScriptClient` runs `.tuplo` files. `DelayingTupleSpace` injects a random per-operation delay to make timing and
 fault-tolerance corner cases show up in experiments.
 
+## Networked mode
+`ReplicaNode` runs one replica per JVM. It exports one RMI object that speaks three interfaces: `RemoteTupleSpace`
+(clients), `NodeControl` (the PuppetMaster: status, crash, freeze, unfreeze) and `PeerRemote` (the other
+replicas). Every replica is started with the same `--peers host:port/name,...` list; replica `i` is the `i`-th entry.
+
+- **Membership / failure detector** (`Membership`). A peer is declared failed only when it can't be reached at all
+  (a fresh registry lookup and a ping both fail): with processes on one machine or a LAN, that means it's gone,
+  which is the statement's *perfect* failure detector. Any failed call or the 200 ms heartbeat triggers the check,
+  and the verdict is gossiped so every survivor updates its `View`. Before a replica has reached all its peers once,
+  an unreachable peer counts as "still starting", never as failed.
+- **SMR over the network** (`RmiTotalOrder`, a `TotalOrder`). The lowest live replica is the sequencer: it numbers
+  each command and pushes it to every live replica in turn, waiting for each. Replicas apply commands strictly in
+  sequence order and ignore duplicates. If the sequencer dies halfway through a push, the next-lowest replica takes
+  over: it collects what every survivor applied, fills in the gaps, re-sends the tail to whoever is behind, and only
+  then orders new commands. Commands carry `(origin, reqId)`, so a client's retry after the crash is ordered at most
+  once. `SmrReplica` is the same class as in-process.
+- **XL over the network** (`XlNetwork` + `XlPeer`). `XlReplica` only talks to peers through these two interfaces.
+  `XlCluster` implements them in-process; `ReplicaNode` implements them with RMI proxies. A proxy whose peer dies
+  mid-call drops it from the view, and the view change releases the dead replica's grants.
+- **PuppetMaster** (`RemoteCluster`, a `ClusterControl`). The same PuppetMaster script drives an in-process cluster or
+  real processes; networked, `crash` halts the target JVM.
+
+```
+  PuppetMaster ──NodeControl──►┐        client / script-client ──RemoteTupleSpace──► any replica
+                               ▼
+        ┌── ReplicaNode 0 ◄──PeerRemote──► ReplicaNode 1 ◄──PeerRemote──► ReplicaNode 2 ──┐
+        │   SmrReplica + RmiTotalOrder   (or)   XlReplica + RMI XlNetwork                   │
+        └───────────────────── Membership: view + heartbeat + gossip ──────────────────────┘
+```
+
 RMI is deliberate: it's the JDK-native descendant of the .NET Remoting the original used, so there are zero
 transport dependencies and the code stays about the *algorithms*. (Its deserialization risk is real — see
 SECURITY.md and the roadmap.)
 
 ## Why the seams are where they are
-`TupleSpace` (the operator API) and `TotalOrder` (the ordering API) are the two interfaces everything else plugs
-into. A new replication scheme is a new `TotalOrder` and/or a new state machine — the client library, the server
+`TupleSpace` (the operator API), `TotalOrder` (SMR's ordering API) and `XlNetwork` (XL's peer API) are the
+interfaces everything else plugs into. A new replication scheme is a new `TotalOrder` and/or a new state machine — the client library, the server
 and the scripts don't change. That's how the XL variant and the advanced fault models land without a rewrite.

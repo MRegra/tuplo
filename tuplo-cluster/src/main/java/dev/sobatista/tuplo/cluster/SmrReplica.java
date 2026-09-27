@@ -122,6 +122,9 @@ public final class SmrReplica implements TupleSpace, TotalOrder.Deliverer {
 
     @Override public int size() { synchronized (this) { return tuples.size(); } }
 
+    /** A copy of the replicated state, oldest first — identical on every replica that applied the same commands. */
+    public List<Tuple> snapshot() { synchronized (this) { return List.copyOf(tuples); } }
+
     // ---- the replicated state machine -------------------------------------
 
     @Override

@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/MRegra/tuplo/actions/workflows/ci.yml/badge.svg)](https://github.com/MRegra/tuplo/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-![status](https://img.shields.io/badge/status-0.2.0%20(pre--1.0)-orange)
+![status](https://img.shields.io/badge/status-0.3.0%20(pre--1.0)-orange)
 
 A tuple space is a shared bag of tuples that any process can write to and read from. You `add` a tuple, and
 someone else `read`s or `take`s one that *matches a pattern* — like leaving a note on a shared board and letting
@@ -63,7 +63,7 @@ Fields are strings or small objects, and schemas add wildcards:
 |---|---|
 | **tuplo-core** | The tuple space itself — `Tuple`, `Schema`, `Field`, wildcard matching, the blocking `LocalTupleSpace`. Start here. |
 | **tuplo-cluster** | The distributed part — **two** replication variants: **SMR** (total-order broadcast, one agreed history) and **XL** (Xu–Liskov spirit: full replication, parallel adds, per-tuple coordinated take). Plus crash / freeze / unfreeze and a shared view. |
-| **tuplo-node** | The runnable part — an RMI server, a client library, a script-client that runs `.tuplo` files, and a **PuppetMaster** that drives either variant and injects faults. |
+| **tuplo-node** | The runnable part — `ReplicaNode` (one SMR or XL replica per process, peers over RMI), a single-node RMI server, a client library, a script-client that runs `.tuplo` files, and a **PuppetMaster** that drives either variant, in-process or networked, and injects faults. |
 
 ## Run a server and a script
 
@@ -77,11 +77,36 @@ mvn -q -pl tuplo-node exec:java -Dexec.mainClass=dev.sobatista.tuplo.node.Script
     -Dexec.args="--host localhost --port 1099 --name s1 --script examples/producer.tuplo"
 ```
 
+## Run a real cluster: three processes, one PuppetMaster
+
+Each replica is its own JVM, talking to the others over RMI. Start three (swap `smr` for `xl` to try the other
+variant), each in its own terminal:
+
+```bash
+P=localhost:11000/r0,localhost:11001/r1,localhost:11002/r2
+mvn -q -pl tuplo-node exec:java -Dexec.mainClass=dev.sobatista.tuplo.node.ReplicaNode \
+    -Dexec.args="--variant smr --id 0 --peers $P"          # then --id 1 and --id 2
+```
+
+Add `--delay-min 5 --delay-max 50` to make every incoming message arrive late. Then drive the cluster with the
+PuppetMaster, from a script or typing commands (`status`, `crash 1`, `freeze 2`, `unfreeze 2`, `client 0 <file>`, `wait <ms>`):
+
+```bash
+mvn -q -pl tuplo-node exec:java -Dexec.mainClass=dev.sobatista.tuplo.node.PuppetMaster \
+    -Dexec.args="--nodes $P --script examples/experiment.pm"
+```
+
+`crash` really kills the replica's process; the survivors notice, update their view and carry on without losing a
+tuple. Any replica also accepts script-clients (`ScriptClient --port 11001 --name r1 --script ...`). Across
+machines, put real host names in `--peers` and start each replica with `-Djava.rmi.server.hostname=<its host>`
+(trusted networks only — see [SECURITY.md](SECURITY.md)).
+
 ## How it works
 
 Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design, [`docs/SPEC.md`](docs/SPEC.md) for the exact
-semantics, and [`ROADMAP.md`](ROADMAP.md) for what's next (the XL variant, networked SMR, crash/freeze injection,
-benchmarks). Write-ups that explain the algorithms live in [`docs/posts/`](docs/posts).
+semantics and the requirement → test traceability matrix, and [`ROADMAP.md`](ROADMAP.md) for what's next (process
+launching via PCS, benchmarks, majority-based fault tolerance). Write-ups that explain the algorithms live in
+[`docs/posts/`](docs/posts).
 
 ## Status & scope
 

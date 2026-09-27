@@ -35,16 +35,16 @@ import java.util.concurrent.locks.ReentrantLock;
  * its coordinator role passes to the lowest surviving id, and any grants it was holding as a taker are released so its
  * half-finished takes don't strand a tuple. See {@link XlCluster} for the wiring.
  */
-public final class XlReplica implements TupleSpace {
+public final class XlReplica implements TupleSpace, XlPeer {
 
     /** Cluster-wide unique tuple identity: which replica created it, and its local sequence number. */
     public record TupleId(int origin, long seq) implements Serializable {}
 
     /** A take request's identity: which replica is asking, and its local counter. */
-    private record ReqId(int replica, long n) {}
+    public record ReqId(int replica, long n) implements Serializable {}
 
     private final int id;
-    private final XlCluster cluster;
+    private final XlNetwork cluster;
     final Faults faults = new Faults();
 
     private final ReentrantLock lock = new ReentrantLock();
@@ -56,12 +56,19 @@ public final class XlReplica implements TupleSpace {
     private final AtomicLong addSeq = new AtomicLong();
     private final AtomicLong reqSeq = new AtomicLong();
 
-    XlReplica(int id, XlCluster cluster) {
+    /** A replica that reaches its peers through {@code network} (in-process {@link XlCluster}, or RMI in tuplo-node). */
+    public XlReplica(int id, XlNetwork network) {
         this.id = id;
-        this.cluster = cluster;
+        this.cluster = network;
     }
 
     public int id() { return id; }
+
+    /** The crash/freeze switches of this replica (what a PuppetMaster flips). */
+    public Faults faults() { return faults; }
+
+    /** A copy of the tuples this replica holds, oldest first. */
+    public List<Tuple> snapshot() { lock.lock(); try { return List.copyOf(store.values()); } finally { lock.unlock(); } }
 
     // ---- client-facing TupleSpace API -------------------------------------
 
@@ -69,8 +76,8 @@ public final class XlReplica implements TupleSpace {
     public void add(Tuple tuple) {
         faults.requireAlive();
         TupleId tid = new TupleId(id, addSeq.getAndIncrement());
-        for (XlReplica r : cluster.activeReplicas()) {
-            r.receiveStore(tid, tuple);         // multicast to every active replica (parallel in spirit; no ordering)
+        for (XlPeer r : cluster.activePeers()) {
+            r.receiveStore(tid, tuple);        // multicast to every active replica (parallel in spirit; no ordering)
         }
     }
 
@@ -101,10 +108,10 @@ public final class XlReplica implements TupleSpace {
                 lock.unlock();
             }
             for (var cand : candidates) {
-                XlReplica coord = cluster.coordinatorOf(cand.getKey());
+                XlPeer coord = cluster.coordinatorOf(cand.getKey());
                 if (coord == null) continue;                        // its coordinator crashed and none survives: skip
                 if (coord.grant(cand.getKey(), req)) {              // exactly one taker wins this tuple
-                    for (XlReplica r : cluster.activeReplicas()) r.receiveRemove(cand.getKey());
+                    for (XlPeer r : cluster.activePeers()) r.receiveRemove(cand.getKey());
                     return cand.getValue();
                 }
             }
@@ -121,9 +128,9 @@ public final class XlReplica implements TupleSpace {
     public Optional<Tuple> tryTake(Schema schema) {
         ReqId req = new ReqId(id, reqSeq.getAndIncrement());
         for (var cand : snapshotMatches(schema)) {
-            XlReplica coord = cluster.coordinatorOf(cand.getKey());
+            XlPeer coord = cluster.coordinatorOf(cand.getKey());
             if (coord != null && coord.grant(cand.getKey(), req)) {
-                for (XlReplica r : cluster.activeReplicas()) r.receiveRemove(cand.getKey());
+                for (XlPeer r : cluster.activePeers()) r.receiveRemove(cand.getKey());
                 return Optional.of(cand.getValue());
             }
         }
@@ -132,9 +139,10 @@ public final class XlReplica implements TupleSpace {
 
     @Override public int size() { lock.lock(); try { return store.size(); } finally { lock.unlock(); } }
 
-    // ---- peer-facing message handlers (in-process "network") --------------
+    // ---- peer-facing message handlers (XlPeer: called in-process or over RMI) ----
 
-    void receiveStore(TupleId tid, Tuple tuple) {
+    @Override
+    public void receiveStore(TupleId tid, Tuple tuple) {
         try {
             faults.awaitThawed();               // frozen: received but processed only after unfreeze
         } catch (InterruptedException e) {
@@ -154,7 +162,8 @@ public final class XlReplica implements TupleSpace {
         }
     }
 
-    void receiveRemove(TupleId tid) {
+    @Override
+    public void receiveRemove(TupleId tid) {
         if (faults.isCrashed()) return;
         lock.lock();
         try {
@@ -169,12 +178,16 @@ public final class XlReplica implements TupleSpace {
     }
 
     /** Coordinator side: grant this tuple to exactly one taker. */
-    boolean grant(TupleId tid, ReqId req) {
+    @Override
+    public boolean grant(TupleId tid, ReqId req) {
         lock.lock();
         try {
-            if (!store.containsKey(tid)) return false;                // already taken (removed) — this taker missed it
+            if (tombstones.contains(tid)) return false;               // already taken (removed) — this taker missed it
+            // Not stored here *yet* is fine: the add's multicast isn't atomic, so a taker may see the tuple before its
+            // coordinator does. The grant is what makes the take exclusive; the tombstone the remove leaves here stops
+            // the late store from resurrecting it. (Refusing used to strand the taker waiting for a change forever.)
             ReqId holder = granted.get(tid);
-            if (holder != null && !holder.equals(req) && cluster.view().isActive(holder.replica())) {
+            if (holder != null && !holder.equals(req) && cluster.isActive(holder.replica())) {
                 return false;                                         // reserved by another live taker
             }
             granted.put(tid, req);
@@ -186,7 +199,8 @@ public final class XlReplica implements TupleSpace {
 
     // ---- fault hooks (driven by XlCluster / PuppetMaster) -----------------
 
-    void onPeerFailed(int failedReplica) {
+    /** The failure detector reported {@code failedReplica} dead: release its grants and let blocked takes retry. */
+    public void onPeerFailed(int failedReplica) {
         lock.lock();
         try {
             granted.entrySet().removeIf(e -> e.getValue().replica() == failedReplica);  // release a dead taker's grants

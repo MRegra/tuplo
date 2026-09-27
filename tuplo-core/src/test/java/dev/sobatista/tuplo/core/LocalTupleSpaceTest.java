@@ -28,6 +28,19 @@ class LocalTupleSpaceTest {
         assertTrue(space.tryTake(parseSchema("\"*\"")).isEmpty());
     }
 
+    @Test void tryReadReturnsMatchWithoutRemoving() {
+        var space = new LocalTupleSpace();
+        space.add(parseTuple("\"a\""));
+        assertEquals(parseTuple("\"a\""), space.tryRead(parseSchema("\"*\"")).orElseThrow());
+        assertEquals(1, space.size(), "tryRead must not remove");
+    }
+
+    @Test void tryReadReturnsEmptyWhenNoMatch() {
+        var space = new LocalTupleSpace();
+        space.add(parseTuple("\"a\""));
+        assertTrue(space.tryRead(parseSchema("\"nomatch\"")).isEmpty());
+    }
+
     @Test void multisetKeepsDuplicates() {
         var space = new LocalTupleSpace();
         space.add(parseTuple("\"x\""));

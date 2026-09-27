@@ -6,6 +6,28 @@ All notable changes to Tuplo are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-27
+### Added
+- **Networked replication**: `ReplicaNode` runs one SMR or XL replica per JVM; replicas talk over RMI
+  (`PeerRemote`), clients use the existing `RemoteTupleSpace`, the PuppetMaster uses `NodeControl`.
+- **Total order over RMI** (`RmiTotalOrder`): the lowest live replica sequences; if it crashes the next one collects
+  what the survivors applied, fills the gaps and takes over. Retried commands are ordered at most once.
+- **Failure detector** (`Membership`): unreachable = failed (perfect-detector model), triggered by failed calls and a
+  heartbeat, gossiped to every survivor's `View`.
+- `XlNetwork` / `XlPeer`: the seam that lets the same `XlReplica` run in-process or over RMI.
+- **Networked PuppetMaster**: `PuppetMaster --nodes host:port/name,...` (script or console) via `RemoteCluster`;
+  `crash` halts the target process; `status` shows each replica's view and presumed-failed peers.
+- Message delays (`--delay-min/--delay-max`) on every incoming client and replica message.
+- `MultiProcessClusterTest`: forks three replica JVMs per test, for SMR and XL: convergence, crash of a plain replica
+  and of the sequencer/coordinator, freeze/unfreeze, delays + script-client, PuppetMaster main.
+- `docs/SPEC.md` traceability matrix (statement requirement → test) and a JaCoCo gate: 100% line coverage for
+  `tuplo-core`, 99% for `tuplo-cluster` (everything but one documented, unreachable defensive catch).
+- 139 tests total (was 55).
+
+### Fixed
+- XL: a take could hang forever when the taker saw a tuple before its coordinator had stored it (the coordinator
+  refused the grant and nothing woke the taker again). The coordinator now grants any tuple that isn't tombstoned.
+
 ## [0.2.0] - 2026-09-26
 ### Added
 - **XL variant** (`XlReplica`/`XlCluster`) in the spirit of Xu & Liskov: full replication, parallel adds (no total
@@ -26,6 +48,7 @@ All notable changes to Tuplo are documented here. The format follows
   a message-delay wrapper, and an in-process `SmrDemo`.
 - 25 tests covering matching, blocking semantics, SMR convergence and the RMI round-trip.
 
-[Unreleased]: https://github.com/MRegra/tuplo/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/MRegra/tuplo/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/MRegra/tuplo/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MRegra/tuplo/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/MRegra/tuplo/releases/tag/v0.1.0

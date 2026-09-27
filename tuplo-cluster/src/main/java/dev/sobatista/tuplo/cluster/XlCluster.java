@@ -11,7 +11,7 @@ import java.util.stream.IntStream;
  * rule for which replica coordinates a given tuple. Coordinator selection is the origin replica if it's alive, else the
  * lowest-numbered survivor — deterministic, so every replica computes the same coordinator without extra chatter.
  */
-public final class XlCluster implements ClusterControl {
+public final class XlCluster implements ClusterControl, XlNetwork {
 
     private final List<XlReplica> replicas;
     private final View view;
@@ -40,17 +40,20 @@ public final class XlCluster implements ClusterControl {
     public View view() { return view; }
 
     /** The replicas currently in the view (add/read/take only talk to these). */
-    List<XlReplica> activeReplicas() {
-        List<XlReplica> out = new ArrayList<>();
+    @Override
+    public List<XlPeer> activePeers() {
+        List<XlPeer> out = new ArrayList<>();
         for (XlReplica r : replicas) if (view.isActive(r.id())) out.add(r);
         return out;
     }
 
     /** The coordinator for a tuple: its origin if alive, else the lowest active id, or null if the cluster is empty. */
-    XlReplica coordinatorOf(XlReplica.TupleId tid) {
-        if (view.isActive(tid.origin())) return replicas.get(tid.origin());
-        return view.active().stream().min(Integer::compareTo).map(replicas::get).orElse(null);
+    @Override
+    public XlPeer coordinatorOf(XlReplica.TupleId tid) {
+        return XlNetwork.coordinatorId(tid, view.active()).map(replicas::get).orElse(null);
     }
+
+    @Override public boolean isActive(int replicaId) { return view.isActive(replicaId); }
 
     // ---- fault injection (what the PuppetMaster drives) -------------------
 

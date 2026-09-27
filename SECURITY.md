@@ -8,5 +8,7 @@ Please **do not** open a public issue for a vulnerability. Email **sobatistacybe
 proof of concept if you have one. You'll get an acknowledgement within a few days.
 
 Tuplo is a teaching implementation of a distributed tuple space — it is **not hardened for untrusted networks**.
-Java RMI in particular deserializes remote input; run Tuplo only on networks you trust. Hardening the transport
+Java RMI in particular deserializes remote input; run Tuplo only on networks you trust. A `ReplicaNode` also
+exposes unauthenticated control operations (`crash`, `freeze`, `unfreeze`) for the PuppetMaster: anyone who can
+reach its RMI port can stop it. Hardening the transport
 (auth, TLS, allow-lists, a safer wire format) is on the [roadmap](ROADMAP.md).

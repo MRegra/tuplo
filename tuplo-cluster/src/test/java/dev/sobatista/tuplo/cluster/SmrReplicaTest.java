@@ -14,6 +14,38 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SmrReplicaTest {
 
+    @Test void idReturnsTheReplicasOwnIndex() {
+        var c = new Cluster(3);
+        for (int i = 0; i < 3; i++) assertEquals(i, c.replica(i).id());
+    }
+
+    @Test void tryReadReturnsMatchWithoutRemoving() throws Exception {
+        var c = new Cluster(2);
+        c.replica(0).add(parseTuple("\"a\""));
+        assertEquals(parseTuple("\"a\""), c.replica(1).tryRead(parseSchema("\"*\"")).orElseThrow());
+        assertEquals(1, c.replica(1).size(), "tryRead must not remove");
+    }
+
+    @Test void tryReadReturnsEmptyWhenNoMatch() {
+        var c = new Cluster(2);
+        assertTrue(c.replica(0).tryRead(parseSchema("\"*\"")).isEmpty());
+    }
+
+    @Test void snapshotIsAnOldestFirstCopyIdenticalOnEveryReplica() throws Exception {
+        var c = new Cluster(3);
+        c.replica(0).add(parseTuple("\"first\""));
+        c.replica(1).add(parseTuple("\"second\""));
+        var expected = java.util.List.of(parseTuple("\"first\""), parseTuple("\"second\""));
+        for (int i = 0; i < 3; i++) assertEquals(expected, c.replica(i).snapshot());
+    }
+
+    @Test void snapshotIsAnImmutableCopy() throws Exception {
+        var c = new Cluster(1);
+        c.replica(0).add(parseTuple("\"a\""));
+        var snap = c.replica(0).snapshot();
+        assertThrows(UnsupportedOperationException.class, () -> snap.add(parseTuple("\"b\"")));
+    }
+
     @Test @Timeout(10)
     void writeOnOneReplicaIsVisibleOnAnother() throws Exception {
         var c = new Cluster(3);
