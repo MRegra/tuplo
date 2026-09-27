@@ -5,6 +5,9 @@ All notable changes to Tuplo are documented here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- CI check (`scripts/check-no-draft-posts.sh`) that fails when a `status: draft` post is committed. Blog post
+  drafts in `docs/posts/` are now gitignored, and `docs/posts/README.md` links only to published posts.
 
 ## [0.2.0] - 2026-09-26
 ### Added

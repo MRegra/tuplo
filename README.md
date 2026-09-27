@@ -81,7 +81,7 @@ mvn -q -pl tuplo-node exec:java -Dexec.mainClass=dev.sobatista.tuplo.node.Script
 
 Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design, [`docs/SPEC.md`](docs/SPEC.md) for the exact
 semantics, and [`ROADMAP.md`](ROADMAP.md) for what's next (the XL variant, networked SMR, crash/freeze injection,
-benchmarks). Write-ups that explain the algorithms live in [`docs/posts/`](docs/posts).
+benchmarks). Write-ups that explain the algorithms are linked from [`docs/posts/`](docs/posts/README.md).
 
 ## Status & scope
 

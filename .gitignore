@@ -3,6 +3,10 @@ target/
 *.class
 # local reference material (NOT published: third-party C# original + IST course PDF)
 reference/
+# blog post drafts stay local (the owner publishes them); only the index of published posts is tracked.
+# scripts/check-no-draft-posts.sh (CI) fails if a `status: draft` post is committed anywhere.
+docs/posts/*
+!docs/posts/README.md
 # IDEs / OS
 .idea/
 *.iml

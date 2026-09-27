@@ -4,6 +4,14 @@ on:
     branches: [main]
   pull_request:
 jobs:
+  no-draft-posts:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail if a draft post is committed
+        run: bash scripts/check-no-draft-posts.sh
   build:
     runs-on: ubuntu-latest
     steps:
