@@ -4,6 +4,7 @@ import dev.sobatista.tuplo.core.Tuple;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -144,6 +145,50 @@ class XlReplicaTest {
         assertTrue(done.await(15, TimeUnit.SECONDS));
         assertEquals(n, seen.size(), "each tuple taken exactly once across the whole cluster");
         for (int i = 0; i < 3; i++) assertEquals(0, c.replica(i).size());
+    }
+
+    /**
+     * Regression (F-0603 adversary review): a grant refusal can mean two different things — the tuple is genuinely
+     * held by another live replica, or its coordinator just crashed and the call never really landed. {@link
+     * XlReplica#take} must tell them apart by re-resolving the coordinator: if it changed, retry the *same* tuple
+     * with the *same* request instead of abandoning it for a different candidate. Abandoning it would strand the
+     * tuple forever if the crashed coordinator had already replicated the grant to its successor (see {@link
+     * XlReplica#grant}) before dying — the successor would then refuse every other taker's request for it, and the
+     * original taker (having moved on) would never come back to claim it.
+     */
+    @Test @Timeout(10)
+    void takeRetriesTheSameTupleAgainstANewCoordinatorInsteadOfAbandoningIt() throws Exception {
+        var tid = new XlReplica.TupleId(9, 0);
+        var tuple = parseTuple("\"x\"");
+        var refusing = new StubPeer(0);          // looks exactly like a live coordinator that refuses the grant
+        var granting = new StubPeer(1);          // the successor: grants it
+        var network = new XlNetwork() {
+            int asked = 0;
+            @Override public List<XlPeer> activePeers() { return List.of(granting); }
+            @Override public boolean isActive(int replicaId) { return true; }
+            @Override public XlPeer coordinatorOf(XlReplica.TupleId t) { return asked++ == 0 ? refusing : granting; }
+        };
+        var taker = new XlReplica(2, network);
+        taker.receiveStore(tid, tuple);           // the taker already has the tuple; only the take/grant path is under test
+
+        assertEquals(tuple, taker.take(parseSchema("\"x\"")));
+        assertTrue(granting.granted, "the successor coordinator must have been asked, not skipped");
+    }
+
+    /** A minimal {@link XlPeer} test double: one coordinator that either always refuses or always grants. */
+    private static final class StubPeer implements XlPeer {
+        final int id;
+        boolean granted;
+        StubPeer(int id) { this.id = id; }
+        @Override public int id() { return id; }
+        @Override public void receiveStore(XlReplica.TupleId tid, Tuple tuple) { }
+        @Override public void receiveRemove(XlReplica.TupleId tid) { }
+        @Override public void receiveGrant(XlReplica.TupleId tid, XlReplica.ReqId req) { }
+        @Override public boolean grant(XlReplica.TupleId tid, XlReplica.ReqId req) {
+            if (id != 1) return false;            // a crashed coordinator's call looks like a plain refusal to take()
+            granted = true;
+            return true;
+        }
     }
 
     @Test @Timeout(10)

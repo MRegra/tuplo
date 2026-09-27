@@ -134,6 +134,8 @@ public final class ReplicaNode extends UnicastRemoteObject implements RemoteTupl
 
     @Override public boolean xlGrant(XlReplica.TupleId tid, XlReplica.ReqId req) { delay(); return xlOnly().grant(tid, req); }
 
+    @Override public void xlReceiveGrant(XlReplica.TupleId tid, XlReplica.ReqId req) { delay(); xlOnly().receiveGrant(tid, req); }
+
     // ---- helpers ------------------------------------------------------------
 
     private RmiTotalOrder smrOnly() {
@@ -183,6 +185,8 @@ public final class ReplicaNode extends UnicastRemoteObject implements RemoteTupl
 
         RemoteXlPeer(int id) { this.id = id; }
 
+        @Override public int id() { return id; }
+
         @Override public void receiveStore(XlReplica.TupleId tid, Tuple tuple) {
             send(() -> members.call(id, p -> { p.xlStore(tid, tuple); return null; }));
         }
@@ -194,6 +198,10 @@ public final class ReplicaNode extends UnicastRemoteObject implements RemoteTupl
         @Override public boolean grant(XlReplica.TupleId tid, XlReplica.ReqId req) {
             Boolean granted = send(() -> members.call(id, p -> p.xlGrant(tid, req)));
             return Boolean.TRUE.equals(granted);
+        }
+
+        @Override public void receiveGrant(XlReplica.TupleId tid, XlReplica.ReqId req) {
+            send(() -> members.call(id, p -> { p.xlReceiveGrant(tid, req); return null; }));
         }
 
         private <T> T send(PeerCall<T> call) {

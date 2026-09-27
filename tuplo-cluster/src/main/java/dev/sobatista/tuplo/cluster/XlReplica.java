@@ -28,7 +28,9 @@ import java.util.concurrent.locks.ReentrantLock;
  *       single <b>coordinator</b> (the replica that created it, or a deterministic survivor if that one crashed). To
  *       take a tuple you ask its coordinator to <em>grant</em> it; the coordinator grants each tuple to exactly one
  *       taker, then the taker multicasts the removal. That single grant point is what makes "removed exactly once"
- *       true without ordering every operation.</li>
+ *       true without ordering every operation. The coordinator also replicates its decision to every other active
+ *       replica before answering ({@link #receiveGrant}), so if it then crashes before the taker's removal has landed,
+ *       a successor coordinator still knows the tuple is taken instead of handing it out again.</li>
  * </ul>
  *
  * <p>Fault tolerance (perfect failure detector, one fault at a time): when a replica crashes it leaves the {@link View},
@@ -108,11 +110,22 @@ public final class XlReplica implements TupleSpace, XlPeer {
                 lock.unlock();
             }
             for (var cand : candidates) {
-                XlPeer coord = cluster.coordinatorOf(cand.getKey());
-                if (coord == null) continue;                        // its coordinator crashed and none survives: skip
-                if (coord.grant(cand.getKey(), req)) {              // exactly one taker wins this tuple
-                    for (XlPeer r : cluster.activePeers()) r.receiveRemove(cand.getKey());
-                    return cand.getValue();
+                TupleId tid = cand.getKey();
+                XlPeer coord = cluster.coordinatorOf(tid);
+                while (coord != null) {
+                    if (coord.grant(tid, req)) {                    // exactly one taker wins this tuple
+                        for (XlPeer r : cluster.activePeers()) r.receiveRemove(tid);
+                        return cand.getValue();
+                    }
+                    // Refused, or the call never landed because the coordinator just crashed — tell those two apart by
+                    // re-resolving. If a *different* replica is now the coordinator, this one crashed mid-attempt: it
+                    // may have already told the successor about our grant (see #grant) before dying, so retry the same
+                    // tuple with the same request against the successor instead of abandoning it — otherwise a phantom
+                    // reservation under our own (abandoned) request could strand the tuple forever. If the coordinator
+                    // is unchanged, we were genuinely refused by a live holder: move on to a different candidate.
+                    XlPeer retry = cluster.coordinatorOf(tid);
+                    if (retry == null || retry.id() == coord.id()) break;
+                    coord = retry;
                 }
             }
             // every current match is reserved by someone else — wait until the state actually changes, then retry.
@@ -177,7 +190,15 @@ public final class XlReplica implements TupleSpace, XlPeer {
         }
     }
 
-    /** Coordinator side: grant this tuple to exactly one taker. */
+    /**
+     * Coordinator side: grant this tuple to exactly one taker.
+     *
+     * <p>Before answering, the decision is replicated to every other active replica ({@link #receiveGrant}). That
+     * closes the window where this coordinator crashes right after granting: without it, the grant lived only here,
+     * so a successor coordinator (the next-lowest survivor) would see no record of it and could hand the same tuple
+     * to a second taker while the first taker's remove was still in flight. With the grant already known to every
+     * survivor, the successor sees an existing, still-active holder and refuses instead.
+     */
     @Override
     public boolean grant(TupleId tid, ReqId req) {
         lock.lock();
@@ -191,7 +212,22 @@ public final class XlReplica implements TupleSpace, XlPeer {
                 return false;                                         // reserved by another live taker
             }
             granted.put(tid, req);
-            return true;
+        } finally {
+            lock.unlock();
+        }
+        for (XlPeer r : cluster.activePeers()) if (r != this) r.receiveGrant(tid, req);
+        return true;
+    }
+
+    /** A coordinator's grant decision, replicated here so this replica can take over coordination without amnesia. */
+    @Override
+    public void receiveGrant(TupleId tid, ReqId req) {
+        lock.lock();
+        try {
+            if (tombstones.contains(tid)) return;    // already removed; a late/duplicate replication is a no-op
+            granted.put(tid, req);
+            version++;
+            changed.signalAll();
         } finally {
             lock.unlock();
         }

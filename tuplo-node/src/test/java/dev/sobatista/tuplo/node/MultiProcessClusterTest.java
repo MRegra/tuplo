@@ -13,8 +13,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -101,6 +103,43 @@ class MultiProcessClusterTest {
             assertEquals(parseTuple("\"new\", \"era\""), c.replicaSpace(1).read(parseSchema("\"new\", \"*\"")));
             awaitConverged(variant, c, List.of(1, 2), 2);
             assertTrue(c.control(1).status().contains("presumed failed [0]"), c.control(1).status());
+        }
+    }
+
+    /**
+     * Regression (F-0603 adversary review): the XL coordinator's grant record used to live only on the coordinator
+     * itself. If it crashed right after granting a tuple but before the taker's removal had reached every replica,
+     * gossip about the crash could beat the (delayed) removal, promote a successor coordinator with no record of the
+     * grant, and that successor would hand the same tuple to a second taker. Concurrent takers plus message delay
+     * make the window routine: reproduced in 4 of 10 runs before the fix with these exact parameters. The fix
+     * replicates the coordinator's grant decision to every active replica before it answers, so a successor already
+     * knows the tuple is taken and refuses to grant it again.
+     */
+    @Test @Timeout(90)
+    void xlCoordinatorCrashDuringConcurrentTakesNeverDoubleGrants() throws Exception {
+        int n = 20;
+        try (var procs = new ReplicaProcesses(ReplicaNode.Variant.XL, 3, "xl-grant-race", 20, 60)) {
+            var c = procs.cluster();
+            for (int i = 0; i < n; i++) c.replicaSpace(0).add(parseTuple("\"t\", \"k" + i + "\""));
+            Thread.sleep(2000);                                       // let every replica settle on all n tuples
+
+            List<CompletableFuture<Tuple>> takers = new ArrayList<>();
+            var pool = Executors.newVirtualThreadPerTaskExecutor();
+            for (int t = 0; t < n; t++) {
+                TupleSpace s = c.replicaSpace(1 + t % 2);               // alternate replicas 1 and 2; never replica 0
+                takers.add(CompletableFuture.supplyAsync(() -> uncheckedTake(s, "\"t\", \"*\""), pool));
+            }
+            Thread.sleep(250);
+            c.crash(0);
+            assertTrue(procs.exited(0, 10_000), "crash must really stop the process");
+
+            List<Tuple> got = new ArrayList<>();
+            try {
+                for (var f : takers) got.add(f.get(60, TimeUnit.SECONDS));
+            } catch (TimeoutException stuck) {
+                fail("a taker never completed (a tuple is likely stranded, granted but never removed): " + got);
+            }
+            assertEquals(n, new HashSet<>(got).size(), "a tuple was taken twice: " + got);
         }
     }
 

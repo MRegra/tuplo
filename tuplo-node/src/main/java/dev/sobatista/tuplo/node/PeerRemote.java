@@ -41,4 +41,7 @@ public interface PeerRemote extends Remote {
     void xlRemove(XlReplica.TupleId tid) throws RemoteException;
 
     boolean xlGrant(XlReplica.TupleId tid, XlReplica.ReqId req) throws RemoteException;
+
+    /** The coordinator's grant decision, replicated so a successor coordinator does not re-grant it. */
+    void xlReceiveGrant(XlReplica.TupleId tid, XlReplica.ReqId req) throws RemoteException;
 }

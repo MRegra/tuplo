@@ -11,6 +11,9 @@ import dev.sobatista.tuplo.core.Tuple;
  */
 public interface XlPeer {
 
+    /** This peer's replica id. */
+    int id();
+
     /** Store a tuple that some replica added (a late store for an already-taken tuple is ignored). */
     void receiveStore(XlReplica.TupleId tid, Tuple tuple);
 
@@ -19,4 +22,10 @@ public interface XlPeer {
 
     /** Coordinator side: grant the tuple to exactly one taker; {@code false} if it is gone or reserved. */
     boolean grant(XlReplica.TupleId tid, XlReplica.ReqId req);
+
+    /**
+     * The coordinator's grant decision, replicated to every other active replica so a successor coordinator (picked
+     * when this one crashes) already knows the tuple is taken and does not hand it out a second time.
+     */
+    void receiveGrant(XlReplica.TupleId tid, XlReplica.ReqId req);
 }

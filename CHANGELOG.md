@@ -22,11 +22,16 @@ All notable changes to Tuplo are documented here. The format follows
   and of the sequencer/coordinator, freeze/unfreeze, delays + script-client, PuppetMaster main.
 - `docs/SPEC.md` traceability matrix (statement requirement → test) and a JaCoCo gate: 100% line coverage for
   `tuplo-core`, 99% for `tuplo-cluster` (everything but one documented, unreachable defensive catch).
-- 139 tests total (was 55).
+- 141 tests total (was 55).
 
 ### Fixed
 - XL: a take could hang forever when the taker saw a tuple before its coordinator had stored it (the coordinator
   refused the grant and nothing woke the taker again). The coordinator now grants any tuple that isn't tombstoned.
+- XL: a coordinator crash during concurrent takes could hand the same tuple to two clients (found by the F-0603
+  adversary review: the crashed coordinator's grant lived only on that process, so a successor coordinator with no
+  record of it could grant the same tuple again while the first taker's remove was still in flight). The coordinator
+  now replicates its grant decision to every active replica before answering, and `take` retries a tuple against its
+  new coordinator instead of abandoning it when the old one crashes mid-attempt.
 
 ## [0.2.0] - 2026-09-26
 ### Added

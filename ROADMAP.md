@@ -9,7 +9,11 @@ Tuplo is built in layers so each milestone is a self-contained thing to learn an
 - **Networked PuppetMaster**: the same command language drives real processes; `crash` kills the JVM.
 - **Multi-process integration tests**: three forked JVMs per test, both variants: convergence, crash (including the
   sequencer / coordinator), freeze, message delays, script-client, PuppetMaster.
-- **Spec traceability** (`docs/SPEC.md`) and a **JaCoCo gate** (core 100% lines; cluster 100% minus a documented exclusion). 139 tests.
+- **Spec traceability** (`docs/SPEC.md`) and a **JaCoCo gate** (core 100% lines; cluster 100% minus a documented exclusion). 141 tests.
+- **Replicated XL grants**: the coordinator's grant decision is replicated to every active replica before it answers
+  (`XlReplica#grant`/`#receiveGrant`), and `take` retries a tuple against its new coordinator instead of abandoning it
+  when the old one crashes mid-attempt. Closes a double-take found by the F-0603 adversary review (a coordinator crash
+  during concurrent takes could hand the same tuple to two clients); `MultiProcessClusterTest#xlCoordinatorCrashDuringConcurrentTakesNeverDoubleGrants`.
 
 ## Shipped in 0.2.0
 - **The XL variant** (Xu–Liskov spirit): full replication, parallel adds, per-tuple coordinated take with view-based failover.
@@ -24,7 +28,6 @@ Tuplo is built in layers so each milestone is a self-contained thing to learn an
 
 ## Next
 - **PCS + process launching** — a Process Creation Service per machine (port 10000) so the PuppetMaster's `server`/`client` commands start processes remotely from a config; asynchronous command execution and step-by-step mode. *(post: "A puppet master for chaos testing")*
-- **Replicated XL grants** — today a take granted by a coordinator that crashes before the remove lands could be granted again by its successor; replicate the reservation (or make the successor ask the survivors) to close that window.
 - **Benchmarks** — the workloads where SMR wins and where XL wins, with numbers.
 - **Advanced fault model** — make progress with only a majority responding (drop the perfect-failure-detector assumption). *(post: "Majority rules: living without a perfect failure detector")*
 - **Transport hardening** — the security angle: RMI deserialization risk, a safer wire format, auth/TLS. *(post: "Your RMI endpoint is a deserialization gadget waiting to happen")*

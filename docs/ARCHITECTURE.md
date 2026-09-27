@@ -71,7 +71,10 @@ replicas). Every replica is started with the same `--peers host:port/name,...` l
   once. `SmrReplica` is the same class as in-process.
 - **XL over the network** (`XlNetwork` + `XlPeer`). `XlReplica` only talks to peers through these two interfaces.
   `XlCluster` implements them in-process; `ReplicaNode` implements them with RMI proxies. A proxy whose peer dies
-  mid-call drops it from the view, and the view change releases the dead replica's grants.
+  mid-call drops it from the view, and the view change releases the dead replica's grants. A coordinator's grant
+  decision is itself replicated to every active peer before it answers, so if it then crashes, its successor already
+  knows the tuple is taken instead of granting it a second time; `take` retries a tuple against its new coordinator
+  (same request) rather than abandoning it when the old one crashes mid-attempt.
 - **PuppetMaster** (`RemoteCluster`, a `ClusterControl`). The same PuppetMaster script drives an in-process cluster or
   real processes; networked, `crash` halts the target JVM.
 
