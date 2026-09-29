@@ -22,7 +22,7 @@ concurrency:
 jobs:
   codeql:
     name: CodeQL (java)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, home]
     timeout-minutes: 30
     permissions:
       actions: read          # CodeQL reads this run's metadata
@@ -44,7 +44,7 @@ jobs:
 
   gitleaks:
     name: Secrets scan (gitleaks)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, home]
     timeout-minutes: 10
     permissions:
       contents: read
@@ -73,7 +73,7 @@ jobs:
   dependency-review:
     name: Dependency review
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, home]
     timeout-minutes: 10
     permissions:
       contents: read
