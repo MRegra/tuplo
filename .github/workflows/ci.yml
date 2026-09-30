@@ -7,8 +7,10 @@ permissions:
   contents: read
 jobs:
   build:
-    # Home self-hosted runners (server-dev1/server-dev2), labels: self-hosted, Linux, X64, home.
-    runs-on: [self-hosted, home]
+    # Dedicated CI host, labels: self-hosted, Linux, X64, ci-2 (F-0905). Distinct from the
+    # home self-hosted runners (server-dev1/server-dev2, labels ...home) added by F-0705, which
+    # regressed production and is being reverted separately.
+    runs-on: [self-hosted, ci-2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -21,9 +23,9 @@ jobs:
           cache: maven
       # `verify` also runs the spotless style check (see pom.xml); fix locally with `mvn spotless:apply`.
       # Uses the Maven Wrapper (./mvnw), not a bare `mvn`: GitHub's ubuntu-latest image bundles
-      # Maven in its hosted tool cache, but the home self-hosted runners are bare metal with no
-      # such cache and no passwordless sudo to `apt install` one. The wrapper needs no install —
-      # it fetches the pinned Maven distribution itself into the (persistent, cached) runner
-      # user's home the first time, then reuses it.
+      # Maven in its hosted tool cache, but ci-2 is bare metal with no such cache and no
+      # passwordless sudo to `apt install` one. The wrapper needs no install — it fetches the
+      # pinned Maven distribution itself into the (persistent, cached) runner user's home the
+      # first time, then reuses it.
       - name: Build, test and style check
         run: ./mvnw -B --no-transfer-progress verify
