@@ -7,8 +7,7 @@ permissions:
   contents: read
 jobs:
   build:
-    # Home self-hosted runners (server-dev1/server-dev2), labels: self-hosted, Linux, X64, home.
-    runs-on: [self-hosted, home]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -20,10 +19,5 @@ jobs:
           java-version: '21'
           cache: maven
       # `verify` also runs the spotless style check (see pom.xml); fix locally with `mvn spotless:apply`.
-      # Uses the Maven Wrapper (./mvnw), not a bare `mvn`: GitHub's ubuntu-latest image bundles
-      # Maven in its hosted tool cache, but the home self-hosted runners are bare metal with no
-      # such cache and no passwordless sudo to `apt install` one. The wrapper needs no install —
-      # it fetches the pinned Maven distribution itself into the (persistent, cached) runner
-      # user's home the first time, then reuses it.
       - name: Build, test and style check
-        run: ./mvnw -B --no-transfer-progress verify
+        run: mvn -B --no-transfer-progress verify
