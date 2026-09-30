@@ -19,6 +19,16 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class RmiIntegrationTest {
 
+    static {
+        // Force the exported stub to advertise the loopback address instead of whatever
+        // `InetAddress.getLocalHost()` resolves to on the host running the test. On a
+        // hardened bare-metal box (e.g. a self-hosted CI runner with a default-deny host
+        // firewall and no guaranteed hostname -> reachable-IP mapping), RMI otherwise embeds
+        // an address the client can't reconnect to, and this same-JVM loopback test fails
+        // with a connection/host-resolution error that never shows up on a throwaway cloud VM.
+        System.setProperty("java.rmi.server.hostname", "127.0.0.1");
+    }
+
     @Test @Timeout(20)
     void addReadTakeOverRmi() throws Exception {
         int port = ThreadLocalRandom.current().nextInt(20000, 40000);
