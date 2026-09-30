@@ -3,6 +3,7 @@ package dev.sobatista.tuplo.cluster;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * How an {@link XlReplica} reaches the rest of its cluster: who is in the view, and which peer coordinates a tuple.
@@ -20,6 +21,15 @@ public interface XlNetwork {
 
     /** Whether a replica is still in the view (perfect failure detector). */
     boolean isActive(int replicaId);
+
+    /** Every replica id this caller currently knows has failed — the coordinator's epoch is the size of this set. */
+    Set<Integer> failedIds();
+
+    /**
+     * Merge a taker's own known-failed set into this network's view (idempotent). Lets a coordinator that has not yet
+     * noticed a crash learn it from the caller's evidence instead of waiting on its own failure detector.
+     */
+    void learnFailed(Set<Integer> ids);
 
     /**
      * The coordinator rule, shared by every transport so all replicas compute the same answer without extra chatter:

@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -63,7 +64,7 @@ class XlReplicaTest {
         c.replica(0).add(parseTuple("\"x\""));
         var tid = new XlReplica.TupleId(0, 0);               // replica 0 is the coordinator (origin)
         var otherReq = new XlReplica.ReqId(1, 0);
-        assertTrue(c.replica(0).grant(tid, otherReq), "replica 1's request reserves the tuple first");
+        assertTrue(c.replica(0).grant(tid, otherReq, Set.of()), "replica 1's request reserves the tuple first");
         assertTrue(c.replica(0).tryTake(parseSchema("\"x\"")).isEmpty(),
                 "already granted to a different, still-active replica: tryTake must not steal it");
     }
@@ -166,6 +167,8 @@ class XlReplicaTest {
             int asked = 0;
             @Override public List<XlPeer> activePeers() { return List.of(granting); }
             @Override public boolean isActive(int replicaId) { return true; }
+            @Override public Set<Integer> failedIds() { return Set.of(); }
+            @Override public void learnFailed(Set<Integer> ids) { }
             @Override public XlPeer coordinatorOf(XlReplica.TupleId t) { return asked++ == 0 ? refusing : granting; }
         };
         var taker = new XlReplica(2, network);
@@ -183,8 +186,8 @@ class XlReplicaTest {
         @Override public int id() { return id; }
         @Override public void receiveStore(XlReplica.TupleId tid, Tuple tuple) { }
         @Override public void receiveRemove(XlReplica.TupleId tid) { }
-        @Override public void receiveGrant(XlReplica.TupleId tid, XlReplica.ReqId req) { }
-        @Override public boolean grant(XlReplica.TupleId tid, XlReplica.ReqId req) {
+        @Override public void receiveGrant(XlReplica.TupleId tid, XlReplica.ReqId req, XlReplica.GrantStamp stamp) { }
+        @Override public boolean grant(XlReplica.TupleId tid, XlReplica.ReqId req, Set<Integer> knownFailed) {
             if (id != 1) return false;            // a crashed coordinator's call looks like a plain refusal to take()
             granted = true;
             return true;

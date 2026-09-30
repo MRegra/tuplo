@@ -6,6 +6,7 @@ import dev.sobatista.tuplo.core.Tuple;
 
 import java.rmi.Remote;
 import java.rmi.RemoteException;
+import java.util.Set;
 import java.util.SortedMap;
 
 /**
@@ -40,8 +41,8 @@ public interface PeerRemote extends Remote {
 
     void xlRemove(XlReplica.TupleId tid) throws RemoteException;
 
-    boolean xlGrant(XlReplica.TupleId tid, XlReplica.ReqId req) throws RemoteException;
+    boolean xlGrant(XlReplica.TupleId tid, XlReplica.ReqId req, Set<Integer> knownFailed) throws RemoteException;
 
     /** The coordinator's grant decision, replicated so a successor coordinator does not re-grant it. */
-    void xlReceiveGrant(XlReplica.TupleId tid, XlReplica.ReqId req) throws RemoteException;
+    void xlReceiveGrant(XlReplica.TupleId tid, XlReplica.ReqId req, XlReplica.GrantStamp stamp) throws RemoteException;
 }

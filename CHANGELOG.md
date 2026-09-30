@@ -26,7 +26,7 @@ All notable changes to Tuplo are documented here. The format follows
   and of the sequencer/coordinator, freeze/unfreeze, delays + script-client, PuppetMaster main.
 - `docs/SPEC.md` traceability matrix (statement requirement → test) and a JaCoCo gate: 100% line coverage for
   `tuplo-core`, 99% for `tuplo-cluster` (everything but one documented, unreachable defensive catch).
-- 141 tests total (was 55).
+- 146 tests total (was 55).
 
 ### Fixed
 - XL: a take could hang forever when the taker saw a tuple before its coordinator had stored it (the coordinator
@@ -36,6 +36,14 @@ All notable changes to Tuplo are documented here. The format follows
   record of it could grant the same tuple again while the first taker's remove was still in flight). The coordinator
   now replicates its grant decision to every active replica before answering, and `take` retries a tuple against its
   new coordinator instead of abandoning it when the old one crashes mid-attempt.
+- XL: a *second* double-take, found by the next adversary round on the fix above: a grant copy sent by a coordinator
+  right before it crashed could arrive after its successor had already granted the same tuple to a different, live
+  taker, overwriting the successor's record ("last writer wins" had no notion of who was still coordinator). Grant
+  records now carry the granting coordinator's **epoch** (how many replicas it knows have failed); a copy can only
+  displace a live holder recorded at a lower epoch. `tryTake` also now shares `take`'s retry-across-coordinators loop,
+  closing a related tuple-stranding gap. **Breaking**: `PeerRemote.xlGrant`/`xlReceiveGrant` signatures changed
+  (grant now carries the taker's known-failed set; the replicated copy carries an epoch) — every replica in a
+  networked 0.3.0 cluster must run the same build. See `docs/adr/0001-xl-grant-epochs.md`.
 
 ## [0.2.0] - 2026-09-26
 ### Added

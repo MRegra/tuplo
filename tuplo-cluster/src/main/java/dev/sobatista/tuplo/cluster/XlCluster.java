@@ -1,7 +1,9 @@
 package dev.sobatista.tuplo.cluster;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.IntStream;
 
 /**
@@ -54,6 +56,20 @@ public final class XlCluster implements ClusterControl, XlNetwork {
     }
 
     @Override public boolean isActive(int replicaId) { return view.isActive(replicaId); }
+
+    /** Every replica not currently in the shared view. */
+    @Override
+    public Set<Integer> failedIds() {
+        Set<Integer> out = new LinkedHashSet<>();
+        for (XlReplica r : replicas) if (!view.isActive(r.id())) out.add(r.id());
+        return out;
+    }
+
+    /**
+     * A no-op: every replica shares this one {@link View}, so a crash ({@link #crash}) is visible to all of them the
+     * instant it happens. There is no propagation delay to bridge, unlike the networked transport in {@code tuplo-node}.
+     */
+    @Override public void learnFailed(Set<Integer> ids) { }
 
     // ---- fault injection (what the PuppetMaster drives) -------------------
 

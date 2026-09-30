@@ -2,6 +2,8 @@ package dev.sobatista.tuplo.cluster;
 
 import dev.sobatista.tuplo.core.Tuple;
 
+import java.util.Set;
+
 /**
  * What one XL replica can ask of another: the three peer messages of the XL protocol.
  *
@@ -20,12 +22,18 @@ public interface XlPeer {
     /** Remove a tuple that was taken (leaves a tombstone so a late store cannot resurrect it). */
     void receiveRemove(XlReplica.TupleId tid);
 
-    /** Coordinator side: grant the tuple to exactly one taker; {@code false} if it is gone or reserved. */
-    boolean grant(XlReplica.TupleId tid, XlReplica.ReqId req);
+    /**
+     * Coordinator side: grant the tuple to exactly one taker; {@code false} if it is gone, reserved, or this peer is
+     * no longer the tuple's coordinator. {@code knownFailed} is the caller's own view of who has failed, merged into
+     * the coordinator's view before it decides (see {@link XlReplica#grant}).
+     */
+    boolean grant(XlReplica.TupleId tid, XlReplica.ReqId req, Set<Integer> knownFailed);
 
     /**
      * The coordinator's grant decision, replicated to every other active replica so a successor coordinator (picked
-     * when this one crashes) already knows the tuple is taken and does not hand it out a second time.
+     * when this one crashes) already knows the tuple is taken and does not hand it out a second time. {@code stamp}
+     * carries the granting coordinator's epoch, so a stale copy from a coordinator that has since been superseded
+     * cannot overwrite a later decision (see {@link XlReplica#receiveGrant}).
      */
-    void receiveGrant(XlReplica.TupleId tid, XlReplica.ReqId req);
+    void receiveGrant(XlReplica.TupleId tid, XlReplica.ReqId req, XlReplica.GrantStamp stamp);
 }

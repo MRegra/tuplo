@@ -9,7 +9,7 @@ Tuplo is built in layers so each milestone is a self-contained thing to learn an
 - **Networked PuppetMaster**: the same command language drives real processes; `crash` kills the JVM.
 - **Multi-process integration tests**: three forked JVMs per test, both variants: convergence, crash (including the
   sequencer / coordinator), freeze, message delays, script-client, PuppetMaster.
-- **Spec traceability** (`docs/SPEC.md`) and a **JaCoCo gate** (core 100% lines; cluster 100% minus a documented exclusion). 141 tests.
+- **Spec traceability** (`docs/SPEC.md`) and a **JaCoCo gate** (core 100% lines; cluster 100% minus a documented exclusion). 146 tests.
 - **Replicated XL grants**: the coordinator's grant decision is replicated to every active replica before it answers
   (`XlReplica#grant`/`#receiveGrant`), and `take` retries a tuple against its new coordinator instead of abandoning it
   when the old one crashes mid-attempt. Closes a double-take found by the F-0603 adversary review (a coordinator crash

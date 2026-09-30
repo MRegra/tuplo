@@ -11,6 +11,8 @@ Tuplo is a teaching implementation of a distributed tuple space — it is **not 
 Java RMI in particular deserializes remote input; run Tuplo only on networks you trust. A `ReplicaNode` exposes two
 unauthenticated interfaces on the same RMI port: `NodeControl` for the PuppetMaster (`crash`, `freeze`, `unfreeze` —
 anyone who can reach the port can stop or stall a replica) and `PeerRemote` for replica-to-replica traffic (`peerFailed`,
-`order`, `deliver`, and the XL peer messages — anyone who can reach the port can forge gossip to evict a live replica
-from the view, or inject commands straight into the replicated log). Hardening the transport
-(auth, TLS, allow-lists, a safer wire format) is on the [roadmap](ROADMAP.md).
+`order`, `deliver`, and the XL peer messages `xlStore`/`xlRemove`/`xlGrant`/`xlReceiveGrant` — anyone who can reach the
+port can forge gossip to evict a live replica from the view, or inject commands straight into the replicated log).
+`xlGrant` and `xlReceiveGrant` also carry a caller-supplied failed-replica set (F-0603) that a replica merges into its
+own view unauthenticated, so a forged call can mark live replicas as failed just like forged `peerFailed` gossip
+already could. Hardening the transport (auth, TLS, allow-lists, a safer wire format) is on the [roadmap](ROADMAP.md).

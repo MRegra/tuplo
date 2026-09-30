@@ -15,7 +15,9 @@ import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.SortedMap;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -132,9 +134,9 @@ public final class ReplicaNode extends UnicastRemoteObject implements RemoteTupl
 
     @Override public void xlRemove(XlReplica.TupleId tid) { delay(); xlOnly().receiveRemove(tid); }
 
-    @Override public boolean xlGrant(XlReplica.TupleId tid, XlReplica.ReqId req) { delay(); return xlOnly().grant(tid, req); }
+    @Override public boolean xlGrant(XlReplica.TupleId tid, XlReplica.ReqId req, Set<Integer> knownFailed) { delay(); return xlOnly().grant(tid, req, knownFailed); }
 
-    @Override public void xlReceiveGrant(XlReplica.TupleId tid, XlReplica.ReqId req) { delay(); xlOnly().receiveGrant(tid, req); }
+    @Override public void xlReceiveGrant(XlReplica.TupleId tid, XlReplica.ReqId req, XlReplica.GrantStamp stamp) { delay(); xlOnly().receiveGrant(tid, req, stamp); }
 
     // ---- helpers ------------------------------------------------------------
 
@@ -176,6 +178,16 @@ public final class ReplicaNode extends UnicastRemoteObject implements RemoteTupl
 
         @Override public boolean isActive(int replicaId) { return members.isActive(replicaId); }
 
+        @Override public Set<Integer> failedIds() {
+            Set<Integer> out = new LinkedHashSet<>();
+            for (int i = 0; i < members.size(); i++) if (!members.isActive(i)) out.add(i);
+            return out;
+        }
+
+        @Override public void learnFailed(Set<Integer> ids) {
+            for (int failedId : ids) if (failedId != members.self()) members.markFailed(failedId);
+        }
+
         private XlPeer peer(int id) { return id == members.self() ? xl : new RemoteXlPeer(id); }
     }
 
@@ -195,13 +207,13 @@ public final class ReplicaNode extends UnicastRemoteObject implements RemoteTupl
             send(() -> members.call(id, p -> { p.xlRemove(tid); return null; }));
         }
 
-        @Override public boolean grant(XlReplica.TupleId tid, XlReplica.ReqId req) {
-            Boolean granted = send(() -> members.call(id, p -> p.xlGrant(tid, req)));
+        @Override public boolean grant(XlReplica.TupleId tid, XlReplica.ReqId req, Set<Integer> knownFailed) {
+            Boolean granted = send(() -> members.call(id, p -> p.xlGrant(tid, req, knownFailed)));
             return Boolean.TRUE.equals(granted);
         }
 
-        @Override public void receiveGrant(XlReplica.TupleId tid, XlReplica.ReqId req) {
-            send(() -> members.call(id, p -> { p.xlReceiveGrant(tid, req); return null; }));
+        @Override public void receiveGrant(XlReplica.TupleId tid, XlReplica.ReqId req, XlReplica.GrantStamp stamp) {
+            send(() -> members.call(id, p -> { p.xlReceiveGrant(tid, req, stamp); return null; }));
         }
 
         private <T> T send(PeerCall<T> call) {

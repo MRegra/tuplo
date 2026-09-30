@@ -45,6 +45,20 @@ public final class XlReplica implements TupleSpace, XlPeer {
     /** A take request's identity: which replica is asking, and its local counter. */
     public record ReqId(int replica, long n) implements Serializable {}
 
+    /**
+     * A coordinator-side reservation, stamped with the coordinator's <b>epoch</b>: the number of replicas it knew had
+     * failed at the moment it granted. The epoch only grows (crash-stop, no recovery), so it orders successive
+     * coordinators for the same tuple without any extra consensus round. See {@link #receiveGrant}.
+     */
+    record Grant(ReqId req, long epoch) {}
+
+    /**
+     * A grant decision replicated to a peer, together with the failed-replica set the granting coordinator knew about.
+     * Piggybacking the set lets a peer that hasn't yet noticed a crash learn it from the copy itself instead of waiting
+     * for its own failure detector.
+     */
+    public record GrantStamp(long epoch, Set<Integer> failed) implements Serializable {}
+
     private final int id;
     private final XlNetwork cluster;
     final Faults faults = new Faults();
@@ -52,7 +66,7 @@ public final class XlReplica implements TupleSpace, XlPeer {
     private final ReentrantLock lock = new ReentrantLock();
     private final Condition changed = lock.newCondition();
     private final LinkedHashMap<TupleId, Tuple> store = new LinkedHashMap<>();   // insertion order → oldest-first
-    private final Map<TupleId, ReqId> granted = new LinkedHashMap<>();           // coordinator-side reservations
+    private final Map<TupleId, Grant> granted = new LinkedHashMap<>();           // coordinator-side reservations
     private final Set<TupleId> tombstones = new HashSet<>();                     // removed ids: drop a late store for them
     private long version = 0;                                                    // bumps on every state change; kills lost wakeups
     private final AtomicLong addSeq = new AtomicLong();
@@ -111,21 +125,9 @@ public final class XlReplica implements TupleSpace, XlPeer {
             }
             for (var cand : candidates) {
                 TupleId tid = cand.getKey();
-                XlPeer coord = cluster.coordinatorOf(tid);
-                while (coord != null) {
-                    if (coord.grant(tid, req)) {                    // exactly one taker wins this tuple
-                        for (XlPeer r : cluster.activePeers()) r.receiveRemove(tid);
-                        return cand.getValue();
-                    }
-                    // Refused, or the call never landed because the coordinator just crashed — tell those two apart by
-                    // re-resolving. If a *different* replica is now the coordinator, this one crashed mid-attempt: it
-                    // may have already told the successor about our grant (see #grant) before dying, so retry the same
-                    // tuple with the same request against the successor instead of abandoning it — otherwise a phantom
-                    // reservation under our own (abandoned) request could strand the tuple forever. If the coordinator
-                    // is unchanged, we were genuinely refused by a live holder: move on to a different candidate.
-                    XlPeer retry = cluster.coordinatorOf(tid);
-                    if (retry == null || retry.id() == coord.id()) break;
-                    coord = retry;
+                if (tryGrant(tid, req)) {                            // exactly one taker wins this tuple
+                    for (XlPeer r : cluster.activePeers()) r.receiveRemove(tid);
+                    return cand.getValue();
                 }
             }
             // every current match is reserved by someone else — wait until the state actually changes, then retry.
@@ -141,13 +143,32 @@ public final class XlReplica implements TupleSpace, XlPeer {
     public Optional<Tuple> tryTake(Schema schema) {
         ReqId req = new ReqId(id, reqSeq.getAndIncrement());
         for (var cand : snapshotMatches(schema)) {
-            XlPeer coord = cluster.coordinatorOf(cand.getKey());
-            if (coord != null && coord.grant(cand.getKey(), req)) {
+            if (tryGrant(cand.getKey(), req)) {
                 for (XlPeer r : cluster.activePeers()) r.receiveRemove(cand.getKey());
                 return Optional.of(cand.getValue());
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * Ask successive coordinators to grant {@code tid} to {@code req}, shared by {@link #take} and {@link #tryTake}.
+     *
+     * <p>A refusal can mean two different things — the tuple is genuinely held by another live replica, or its
+     * coordinator just crashed and the call never really landed. Tell them apart by re-resolving the coordinator: if
+     * it changed, retry the *same* tuple with the *same* request against the successor instead of abandoning it —
+     * otherwise a phantom reservation under our own (abandoned) request could strand the tuple forever. If the
+     * coordinator is unchanged, we were genuinely refused by a live holder.
+     */
+    private boolean tryGrant(TupleId tid, ReqId req) {
+        XlPeer coord = cluster.coordinatorOf(tid);
+        while (coord != null) {
+            if (coord.grant(tid, req, cluster.failedIds())) return true;
+            XlPeer retry = cluster.coordinatorOf(tid);
+            if (retry == null || retry.id() == coord.id()) return false;
+            coord = retry;
+        }
+        return false;
     }
 
     @Override public int size() { lock.lock(); try { return store.size(); } finally { lock.unlock(); } }
@@ -193,39 +214,71 @@ public final class XlReplica implements TupleSpace, XlPeer {
     /**
      * Coordinator side: grant this tuple to exactly one taker.
      *
-     * <p>Before answering, the decision is replicated to every other active replica ({@link #receiveGrant}). That
-     * closes the window where this coordinator crashes right after granting: without it, the grant lived only here,
-     * so a successor coordinator (the next-lowest survivor) would see no record of it and could hand the same tuple
-     * to a second taker while the first taker's remove was still in flight. With the grant already known to every
-     * survivor, the successor sees an existing, still-active holder and refuses instead.
+     * <p>Before answering, the decision is replicated to every other active replica ({@link #receiveGrant}), stamped
+     * with this coordinator's <b>epoch</b> (how many replicas it knows have failed). That closes the window where this
+     * coordinator crashes right after granting: without it, the grant lived only here, so a successor coordinator (the
+     * next-lowest survivor) would see no record of it and could hand the same tuple to a second taker while the first
+     * taker's remove was still in flight. With the grant already known to every survivor, the successor sees an
+     * existing, still-active holder and refuses instead.
+     *
+     * <p>The epoch also protects against the mirror failure: a copy of <em>this</em> coordinator's own grant, still in
+     * flight when it crashes, must never be allowed to overwrite a later decision made by its successor. Since the
+     * successor only starts granting after it knows this coordinator is gone, its grants carry a strictly higher
+     * epoch — see {@link #receiveGrant}.
+     *
+     * <p>{@code knownFailed} is the taker's own view of who has failed; it is merged into this replica's view before
+     * anything else, so a coordinator that has not yet noticed the taker's failure evidence still makes the right
+     * call. The merge (and the {@code coordinatorOf} check right after) must happen without holding {@link #lock}: the
+     * merge can itself call back into this replica (see {@link #onPeerFailed}), which takes {@link #lock}.
      */
     @Override
-    public boolean grant(TupleId tid, ReqId req) {
+    public boolean grant(TupleId tid, ReqId req, Set<Integer> knownFailed) {
+        cluster.learnFailed(knownFailed);
+        XlPeer coordinatorNow = cluster.coordinatorOf(tid);
+        if (coordinatorNow == null || coordinatorNow.id() != id) return false;   // not (or no longer) this tuple's coordinator
+        Set<Integer> failed = cluster.failedIds();
+        long epoch = failed.size();
         lock.lock();
         try {
             if (tombstones.contains(tid)) return false;               // already taken (removed) — this taker missed it
             // Not stored here *yet* is fine: the add's multicast isn't atomic, so a taker may see the tuple before its
             // coordinator does. The grant is what makes the take exclusive; the tombstone the remove leaves here stops
             // the late store from resurrecting it. (Refusing used to strand the taker waiting for a change forever.)
-            ReqId holder = granted.get(tid);
-            if (holder != null && !holder.equals(req) && cluster.isActive(holder.replica())) {
+            Grant holder = granted.get(tid);
+            if (holder != null && !holder.req().equals(req) && cluster.isActive(holder.req().replica())) {
                 return false;                                         // reserved by another live taker
             }
-            granted.put(tid, req);
+            granted.put(tid, new Grant(req, epoch));
         } finally {
             lock.unlock();
         }
-        for (XlPeer r : cluster.activePeers()) if (r != this) r.receiveGrant(tid, req);
+        GrantStamp stamp = new GrantStamp(epoch, failed);
+        for (XlPeer r : cluster.activePeers()) if (r != this) r.receiveGrant(tid, req, stamp);
         return true;
     }
 
-    /** A coordinator's grant decision, replicated here so this replica can take over coordination without amnesia. */
+    /**
+     * A coordinator's grant decision, replicated here so this replica can take over coordination without amnesia.
+     *
+     * <p>Copies are not simply "last writer wins": a copy sent by a coordinator just before it crashed can arrive
+     * <em>after</em> its successor has already granted the same tuple to a different, live taker. Such a copy always
+     * carries a lower or equal epoch than the successor's own grant (the successor only grants once it knows the
+     * sender is gone, so its epoch is strictly higher), which is what lets this method tell a stale copy from the
+     * current truth without any extra round trip.
+     */
     @Override
-    public void receiveGrant(TupleId tid, ReqId req) {
+    public void receiveGrant(TupleId tid, ReqId req, GrantStamp stamp) {
+        cluster.learnFailed(stamp.failed());
         lock.lock();
         try {
             if (tombstones.contains(tid)) return;    // already removed; a late/duplicate replication is a no-op
-            granted.put(tid, req);
+            Grant record = granted.get(tid);
+            if (record != null && stamp.epoch() < record.epoch()) return;   // a deposed coordinator's stale copy
+            if (record != null && stamp.epoch() == record.epoch()
+                    && !record.req().equals(req) && cluster.isActive(record.req().replica())) {
+                return;                                                     // same-epoch tie: first writer wins
+            }
+            granted.put(tid, new Grant(req, stamp.epoch()));
             version++;
             changed.signalAll();
         } finally {
@@ -239,7 +292,7 @@ public final class XlReplica implements TupleSpace, XlPeer {
     public void onPeerFailed(int failedReplica) {
         lock.lock();
         try {
-            granted.entrySet().removeIf(e -> e.getValue().replica() == failedReplica);  // release a dead taker's grants
+            granted.entrySet().removeIf(e -> e.getValue().req().replica() == failedReplica);  // release a dead taker's grants
             version++;
             changed.signalAll();                                                        // let blocked takes retry
         } finally {
