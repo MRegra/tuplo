@@ -1,0 +1,21 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>MRegra/fedora-workstation-scripts//renovate/default"],
+  "description": [
+    "Scope mirrors the Dependabot config this replaces: Maven (the root pom.xml drives tuplo-core, tuplo-cluster, tuplo-node) and GitHub Actions, plus the Maven wrapper.",
+    "Commit types keep Dependabot's build(deps) / ci(deps) prefixes."
+  ],
+  "enabledManagers": ["maven", "maven-wrapper", "github-actions"],
+  "semanticCommits": "enabled",
+  "semanticCommitScope": "deps",
+  "packageRules": [
+    {
+      "matchManagers": ["maven", "maven-wrapper"],
+      "semanticCommitType": "build"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "semanticCommitType": "ci"
+    }
+  ]
+}
