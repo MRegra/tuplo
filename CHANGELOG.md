@@ -7,7 +7,7 @@ All notable changes to Tuplo are documented here. The format follows
 ## [Unreleased]
 ### Added
 - Security CI: CodeQL (Java), a gitleaks secret scan over the full history, and dependency review on PRs.
-- Dependabot for Maven and GitHub Actions; all workflow actions pinned by commit SHA with least-privilege permissions.
+- Renovate (self-hosted, weekly) for Maven, the Maven wrapper and GitHub Actions; all workflow actions pinned by commit SHA with least-privilege permissions.
 - Spotless style check in `mvn verify` (unused imports, trailing whitespace, final newline); fix with `mvn spotless:apply`.
 
 ## [0.2.0] - 2026-09-26
