@@ -5,6 +5,7 @@
     "Scope mirrors the Dependabot config this replaces: Maven (the root pom.xml drives tuplo-core, tuplo-cluster, tuplo-node) and GitHub Actions, plus the Maven wrapper.",
     "Commit types keep Dependabot's build(deps) / ci(deps) prefixes."
   ],
+  "dependencyDashboard": true,
   "enabledManagers": ["maven", "maven-wrapper", "github-actions"],
   "semanticCommits": "enabled",
   "semanticCommitScope": "deps",
